@@ -325,8 +325,7 @@ jobs:
           curl -s -X POST \
             "https://api.telegram.org/bot${botToken}/sendMessage" \
             -d chat_id="$chatId" \
-            -d parse_mode="Markdown" \
-            -d text="Crave Project: ${{ github.event.inputs.BASE_PROJECT }}%0ACrave ProjectID: $PROJECTID%0ABuild for ${{ github.event.inputs.DEVICE_NAME }} has been queued%0ACheck Progress at:%0Ahttps://github.com/$(echo "${{ github.repository }}" | sed 's@_@\\_@g')/actions/runs/${{ github.run_id }}"
+            -d text="Crave Project: ${{ github.event.inputs.BASE_PROJECT }}%0ACrave ProjectID: $PROJECTID%0ABuild for ${{ github.event.inputs.DEVICE_NAME }} has been queued%0ACheck Progress at:%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
         env:
           chatId: ${{ secrets.TELEGRAM_TO }}
           botToken: ${{ secrets.TELEGRAM_TOKEN }}
@@ -553,7 +552,7 @@ jobs:
           curl -s -X POST \
             "https://api.telegram.org/bot${botToken}/sendMessage" \
             -d chat_id="$chatId" \
-            -d text="Crave Project: ${{ github.event.inputs.BASE_PROJECT }}%0ACrave ProjectID: $PROJECTID%0ABuild for ${{ github.event.inputs.DEVICE_NAME }} ${STATUS_MSG}${LINKS_MSG}%0A%0ACheck Progress at:%0Ahttps://github.com/$(echo "${{ github.repository }}" | sed 's@_@\\_@g')/actions/runs/${{ github.run_id }}"
+            -d text="Crave Project: ${{ github.event.inputs.BASE_PROJECT }}%0ACrave ProjectID: $PROJECTID%0ABuild for ${{ github.event.inputs.DEVICE_NAME }} ${STATUS_MSG}${LINKS_MSG}%0A%0ACheck Progress at:%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
         env:
           chatId: ${{ secrets.TELEGRAM_TO }}
           botToken: ${{ secrets.TELEGRAM_TOKEN }}
