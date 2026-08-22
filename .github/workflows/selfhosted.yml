@@ -24,6 +24,7 @@ on:
           - 'PixelOS 15'
           - 'RisingOS 15 Revived'
           - 'LineageOS 18.1'
+          - 'LineageOS 16.0'
           - 'AOSP'
       BUILD_DIFFERENT_ROM:
         description: "Command to initialize a different 'repo' project:"
@@ -176,6 +177,11 @@ jobs:
               export PROJECTFOLDER="/crave-devspaces/Lineage18"
               export PROJECTID="85"
               export REPO_INIT="repo init -u https://github.com/accupara/los18.1.git -b lineage-18.1 --git-lfs --depth=1"
+              ;;
+            "LineageOS 16.0")
+              export PROJECTFOLDER="/crave-devspaces/Lineage16"
+              export PROJECTID="81"
+              export REPO_INIT="repo init -u https://github.com/accupara/los16.git -b lineage-16.0 --git-lfs --depth=1"
               ;;
             "AOSP")
               export PROJECTFOLDER="/crave-devspaces/AOSP"
