@@ -66,6 +66,14 @@ on:
         options:
           - 'yes'
           - 'no'
+      UPLOAD_SERVICE:
+        description: 'Upload service for build artifacts:'
+        required: true
+        default: 'gofile'
+        type: choice
+        options:
+          - 'gofile'
+          - 'pixeldrain'
 
 jobs:
   Start-Runner:
@@ -527,49 +535,88 @@ jobs:
           echo "Displaying out/error.log"
           cat out/error.log
 
-      - name: Upload to Gofile
+      - name: Upload artifacts
         if: ${{ success() }}
         continue-on-error: true
+        env:
+          PIXELDRAIN_TOKEN: ${{ secrets.PIXELDRAIN_TOKEN }}
         run: |
           cd $PROJECTFOLDER
-          crave ssh -- "
-            DEVICE='${{ github.event.inputs.DEVICE_NAME }}'
+          UPLOAD_SERVICE='${{ github.event.inputs.UPLOAD_SERVICE }}'
+          DEVICE='${{ github.event.inputs.DEVICE_NAME }}'
 
-            rm -f out/gofile_links.txt
-            mkdir -p out
-
-            SERVER=\$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name // \"store1\"')
-            echo \"Using Gofile server: \$SERVER\"
-
-            find out/target/product/\$DEVICE/ -maxdepth 1 -type f -name '*.zip' ! -name '*ota*' ! -name 'target_files*' ! -name '*image*' | while read -r file; do
-              if [ -f \"\$file\" ]; then
-                FILENAME=\$(basename \"\$file\")
-                echo \"Uploading \$FILENAME to Gofile (\$SERVER)...\"
-
-                RESPONSE=\$(curl -s -L -F \"file=@\$file\" \"https://\${SERVER}.gofile.io/contents/uploadfile\")
-
-                if echo \"\$RESPONSE\" | jq -e '.status == \"ok\"' >/dev/null 2>&1; then
-                  DOWNLOAD_LINK=\$(echo \"\$RESPONSE\" | jq -r '.data.downloadPage')
-                  echo \"Uploaded: \$FILENAME -> \$DOWNLOAD_LINK\"
-                  echo \"• \$FILENAME: \$DOWNLOAD_LINK\" >> out/gofile_links.txt
-                else
-                  echo \"Failed to upload \$FILENAME: \$RESPONSE\"
-                fi
+          if [ "$UPLOAD_SERVICE" = "pixeldrain" ]; then
+            echo "Uploading to PixelDrain..."
+            crave ssh -- "
+              DEVICE='$DEVICE'
+              PD_KEY='$PIXELDRAIN_TOKEN'
+              AUTH_OPT=''
+              if [ -n \"\$PD_KEY\" ]; then
+                AUTH_OPT=\"-u :\$PD_KEY\"
               fi
-            done
-          "
-          crave pull out/gofile_links.txt || true
 
-          if [ -f out/gofile_links.txt ]; then
-            DOWNLOAD_LINKS=$(cat out/gofile_links.txt)
+              rm -f out/upload_links.txt
+              mkdir -p out
+
+              for file in \$(find out/target/product/\$DEVICE/ -maxdepth 1 -type f -name '*.zip' ! -name '*ota*' ! -name 'target_files*' ! -name '*image*'); do
+                if [ -f \"\$file\" ]; then
+                  FILENAME=\$(basename \"\$file\")
+                  echo \"Uploading \$FILENAME to PixelDrain...\"
+                  RESP=\$(curl -s -T \"\$file\" \$AUTH_OPT \"https://pixeldrain.com/api/file/\$FILENAME\")
+                  FILE_ID=\$(echo \"\$RESP\" | jq -r '.id // empty')
+                  if [ -n \"\$FILE_ID\" ]; then
+                    LINK=\"https://pixeldrain.com/u/\$FILE_ID\"
+                    echo \"Uploaded: \$FILENAME -> \$LINK\"
+                    echo \"• \$FILENAME: \$LINK\" >> out/upload_links.txt
+                  else
+                    echo \"Failed to upload \$FILENAME: \$RESP\"
+                  fi
+                fi
+              done
+            "
+          else
+            echo "Uploading to Gofile..."
+            crave ssh -- "
+              DEVICE='$DEVICE'
+
+              rm -f out/upload_links.txt
+              mkdir -p out
+
+              SERVER=\$(curl -s https://api.gofile.io/servers | jq -r '.data.servers[0].name // \"store1\"')
+              echo \"Using Gofile server: \$SERVER\"
+
+              find out/target/product/\$DEVICE/ -maxdepth 1 -type f -name '*.zip' ! -name '*ota*' ! -name 'target_files*' ! -name '*image*' | while read -r file; do
+                if [ -f \"\$file\" ]; then
+                  FILENAME=\$(basename \"\$file\")
+                  echo \"Uploading \$FILENAME to Gofile (\$SERVER)...\"
+
+                  RESPONSE=\$(curl -s -L -F \"file=@\$file\" \"https://\${SERVER}.gofile.io/contents/uploadfile\")
+
+                  if echo \"\$RESPONSE\" | jq -e '.status == \"ok\"' >/dev/null 2>&1; then
+                    DOWNLOAD_LINK=\$(echo \"\$RESPONSE\" | jq -r '.data.downloadPage')
+                    echo \"Uploaded: \$FILENAME -> \$DOWNLOAD_LINK\"
+                    echo \"• \$FILENAME: \$DOWNLOAD_LINK\" >> out/upload_links.txt
+                  else
+                    echo \"Failed to upload \$FILENAME: \$RESPONSE\"
+                  fi
+                fi
+              done
+            "
+          fi
+
+          crave pull out/upload_links.txt || true
+
+          if [ -f out/upload_links.txt ]; then
+            DOWNLOAD_LINKS=$(cat out/upload_links.txt)
             echo "DOWNLOAD_LINKS<<EOF" >> $GITHUB_ENV
             echo "$DOWNLOAD_LINKS" >> $GITHUB_ENV
             echo "EOF" >> $GITHUB_ENV
             echo "Links encontrados:"
             echo "$DOWNLOAD_LINKS"
           else
-            echo "Nenhum link do Gofile foi gerado."
+            echo "Nenhum link de upload foi gerado."
           fi
+
 
       - name: Notify build result (Telegram)
         if: ${{ always() }}
