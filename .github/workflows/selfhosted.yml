@@ -624,22 +624,55 @@ jobs:
         run: |
           if [ "${{ job.status }}" = "success" ]; then
             STATUS_MSG="has Succeeded!"
-            LINKS_MSG=""
-            if [ -n "$DOWNLOAD_LINKS" ]; then
-              LINKS_MSG="%0A%0ADownload:%0A${DOWNLOAD_LINKS}"
-            fi
           elif [ "${{ job.status }}" = "cancelled" ]; then
             STATUS_MSG="has been Cancelled!"
-            LINKS_MSG=""
           else
             STATUS_MSG="has Failed!"
-            LINKS_MSG=""
           fi
 
-          curl -s -X POST \
-            "https://api.telegram.org/bot${botToken}/sendMessage" \
-            -d chat_id="$chatId" \
-            -d text="Crave Project: ${{ github.event.inputs.BASE_PROJECT }}%0ACrave ProjectID: $PROJECTID%0ABuild for ${{ github.event.inputs.DEVICE_NAME }} ${STATUS_MSG}${LINKS_MSG}%0A%0ACheck Progress at:%0Ahttps://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TEXT="Crave Project: ${{ github.event.inputs.BASE_PROJECT }}"
+          TEXT="${TEXT}"$'\n'"Crave ProjectID: $PROJECTID"
+          TEXT="${TEXT}"$'\n'"Build for ${{ github.event.inputs.DEVICE_NAME }} ${STATUS_MSG}"
+
+          REPLY_MARKUP=""
+          if [ "${{ job.status }}" = "success" ] && [ -n "$DOWNLOAD_LINKS" ]; then
+            TEXT="${TEXT}"$'\n\n'"Download:"
+            BUTTONS=""
+            FIRST=1
+            while IFS= read -r line; do
+              [ -z "$line" ] && continue
+              FILENAME=$(echo "$line" | sed -n 's/^• \(.*\): https\{0,1\}:\/\/.*$/\1/p')
+              URL=$(echo "$line" | sed -n 's/^• .*: \(https\{0,1\}:\/\/.*\)$/\1/p')
+              if [ -n "$FILENAME" ] && [ -n "$URL" ]; then
+                TEXT="${TEXT}"$'\n'"<code>${FILENAME}</code>"
+                URL_ESC=$(printf '%s' "$URL" | sed 's/\\/\\\\/g; s/"/\\"/g')
+                if [ "$FIRST" -eq 0 ]; then
+                  BUTTONS="${BUTTONS},"
+                fi
+                BUTTONS="${BUTTONS}[{\"text\":\"⬇️ Download\",\"url\":\"${URL_ESC}\"}]"
+                FIRST=0
+              fi
+            done <<< "$DOWNLOAD_LINKS"
+            if [ "$FIRST" -eq 0 ]; then
+              REPLY_MARKUP="{\"inline_keyboard\":[${BUTTONS}]}"
+            fi
+          fi
+
+          TEXT="${TEXT}"$'\n\n'"Check Progress at:"
+          TEXT="${TEXT}"$'\n'"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ -n "$REPLY_MARKUP" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${botToken}/sendMessage" \
+              -d chat_id="$chatId" \
+              -d parse_mode="HTML" \
+              --data-urlencode "text=${TEXT}" \
+              --data-urlencode "reply_markup=${REPLY_MARKUP}"
+          else
+            curl -s -X POST "https://api.telegram.org/bot${botToken}/sendMessage" \
+              -d chat_id="$chatId" \
+              -d parse_mode="HTML" \
+              --data-urlencode "text=${TEXT}"
+          fi
         env:
           chatId: ${{ secrets.TELEGRAM_TO }}
           botToken: ${{ secrets.TELEGRAM_TOKEN }}
