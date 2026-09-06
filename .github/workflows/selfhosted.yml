@@ -429,6 +429,46 @@ jobs:
           echo "BUILD_DIFFERENT_ROM=$BUILD_DIFFERENT_ROM" >> "$GITHUB_ENV"
           echo "Building with: $LUNCH"
 
+
+      - name: Inject Signing Keys (Secure)
+        env:
+          SIGNING_KEYS_REPO: ${{ secrets.SIGNING_KEYS_REPO }}
+          SIGNING_KEYS_BRANCH: ${{ secrets.SIGNING_KEYS_BRANCH }}
+          SIGNING_KEYS_DIR: ${{ secrets.SIGNING_KEYS_DIR }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          cd $PROJECTFOLDER
+          if [[ -n "$SIGNING_KEYS_REPO" && -n "$GH_TOKEN" ]]; then
+            echo "Injecting release signing keys securely into Crave devspace (Git Clone)..."
+            CLEAN_REPO="$SIGNING_KEYS_REPO"
+            CLEAN_REPO="${CLEAN_REPO#https://github.com/}"
+            CLEAN_REPO="${CLEAN_REPO#http://github.com/}"
+            CLEAN_REPO="${CLEAN_REPO#git@github.com:}"
+            CLEAN_REPO="${CLEAN_REPO%/}"
+            CLEAN_REPO="${CLEAN_REPO%.git}"
+            BRANCH="${SIGNING_KEYS_BRANCH:-main}"
+            KEYS_DIR="${SIGNING_KEYS_DIR:-vendor/lineage-priv/keys}"
+            echo "Cloning $CLEAN_REPO (branch: $BRANCH) -> $KEYS_DIR"
+            git clone --depth=1 -b "$BRANCH" "https://${GH_TOKEN}@github.com/${CLEAN_REPO}.git" /tmp/runner_keys
+            tar -czf - -C /tmp/runner_keys . | crave ssh -- "
+              KEYS_DIR='$KEYS_DIR'
+              mkdir -p /tmp/.crave_signing_keys \"\$KEYS_DIR\"
+              tar -xzf - -C /tmp/.crave_signing_keys
+              if [ -d /tmp/.crave_signing_keys/keys ]; then
+                cp -rf /tmp/.crave_signing_keys/keys/* \"\$KEYS_DIR\"/
+              else
+                cp -rf /tmp/.crave_signing_keys/* \"\$KEYS_DIR\"/
+              fi
+              chmod 700 \"\$KEYS_DIR\"
+              chmod 600 \"\$KEYS_DIR\"/* 2>/dev/null || true
+              echo \"Signing keys successfully injected into \$KEYS_DIR\"
+            "
+            rm -rf /tmp/runner_keys
+          else
+            echo "No custom signing keys configured, skipping injection."
+            echo "Set secrets: SIGNING_KEYS_REPO, SIGNING_KEYS_BRANCH (optional), SIGNING_KEYS_DIR (optional), GH_TOKEN"
+          fi
+
       # ── Compilation ────────────────────────────────────────
       - name: Start compilation through 'crave'
         if: ${{ github.event.inputs.BUILD_DIFFERENT_ROM != 'skip' }}
@@ -566,6 +606,7 @@ jobs:
       - name: Destroy Crave Clone
         if: ${{ always() }}
         run: |
+          crave ssh -- "rm -rf /tmp/.crave_signing_keys" || true
           if grep -q "$PROJECTFOLDER" <(crave clone list --json | jq -r '.clones[]."Cloned At"') || [[ "${DCDEVSPACE}" == "1" ]]; then
             crave clone destroy -y $PROJECTFOLDER || echo "Error removing $PROJECTFOLDER"
           else
